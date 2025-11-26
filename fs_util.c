@@ -14,7 +14,7 @@ uint32_t zone_size = 0;
 uint32_t blocks_per_zone = 0; // Calculated from log_zone_size
 int is_verbose = 0; // Set by init_filesystem
 
-// --- Helper: Reads Partition Entry from absolute disk offset ---
+// --- Helper: Reads Partition Entry from absolute disk offset --- j
 static uint32_t get_partition_start(int part_num, off_t table_addr) {
     partition_entry_t pt[4]; 
     
