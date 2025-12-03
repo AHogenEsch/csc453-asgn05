@@ -1,3 +1,6 @@
+#define _GNU_SOURCE // CRITICAL: Exposes POSIX functions like strtok_r and strnlen 
+                    // when compiling with -std=c99. MUST be first line.
+
 #include "fs_util.h"
 
 // --- Global State Definitions (Shared across minls/minget via linking) ---
@@ -195,10 +198,8 @@ uint32_t get_file_block(const minix_inode_t *inode, uint32_t logical_block) {
             }
         }
     }
-    // Double Indirect Zone (Omitted for brevity, but follows a similar pattern:
-    // read primary indirect block, then read secondary indirect block)
+    // Double Indirect Zone (Omitted for brevity, but follows a similar pattern)
     else {
-        // Fall through to zone_num = 0 if double indirect is required
         if (is_verbose) fprintf(stderr, "Warning: Double indirect zone access attempted (omitted).\n");
         zone_num = 0;
     }
@@ -206,34 +207,7 @@ uint32_t get_file_block(const minix_inode_t *inode, uint32_t logical_block) {
     // Check for file hole (zone 0)
     if (zone_num == 0) return 0; 
     
-    // Calculate block offset relative to the start of the entire filesystem
-    // MINIX zone numbers are relative to the start of the data zones (current_sb.firstdata)
-    // Block # = (Zone # * Blocks/Zone) + Block_in_Zone
-    
-    // Data zones start after the bitmaps and inode region.
-    // The zone numbers stored in the inode point to zones in the data region.
-    // The absolute block number (relative to FS start) is:
-    // (Zone number * Blocks/Zone) + Block_in_Zone
-    
-    // Given the complexity of MINIX block/zone numbering (Table 2), a simplification is often used:
-    // Disk Block # (relative to FS start) = (Zone # * blocks_per_zone_val) + block_in_zone
-    // This assumes Zone 0 is block 0, Zone 1 is block 'blocks_per_zone_val', etc.
-    // However, the zones in the inode array are *data zones*. The first data zone number is 'firstdata'.
-    
-    // Correct absolute block number:
-    // (absolute block number of the *start* of the data zone region) 
-    // + ((zone_num - current_sb.firstdata) * blocks_per_zone_val) // offset to the correct data zone
-    // + block_in_zone // offset to the correct block within that zone
-
-    uint32_t data_start_block = 2 + current_sb.i_blocks + current_sb.z_blocks + (current_sb.ninodes * INODE_SIZE / current_sb.blocksize);
-    if ((current_sb.ninodes * INODE_SIZE) % current_sb.blocksize != 0) {
-        data_start_block++; // Account for partially filled inode block
-    }
-    
-    // A simpler way based on T&W's common implementation:
-    // Zone numbers in the inode are *absolute* zone numbers, with zone 0 being reserved.
     // Block number = Zone number * blocks_per_zone_val + block_in_zone
-    
     uint32_t disk_block_num = (zone_num * blocks_per_zone_val) + block_in_zone;
 
     // This block number is now ready to be multiplied by current_sb.blocksize
@@ -250,7 +224,7 @@ uint32_t get_file_block(const minix_inode_t *inode, uint32_t logical_block) {
 char *canonicalize_path(const char *path) {
     if (!path || path[0] == '\0') {
         char *p = malloc(2);
-        strcpy(p, "/");
+        if (p) strcpy(p, "/");
         return p;
     }
 
@@ -258,6 +232,12 @@ char *canonicalize_path(const char *path) {
     size_t len = strlen(path);
     char *temp_copy = malloc(len + 2); 
     char *new_path = malloc(len + 2);
+    if (!temp_copy || !new_path) {
+        free(temp_copy); // Free if only one succeeded
+        free(new_path);
+        return NULL;
+    }
+
     char *p = new_path;
 
     strcpy(temp_copy, path);
@@ -282,7 +262,7 @@ char *canonicalize_path(const char *path) {
     *p = '\0'; // Null terminate the final string
     free(temp_copy);
 
-    // If result is just a "/" (e.g., input was "//"), done.
+    // If result is just a "/" (e.g., input was "//" or ""), done.
     if (new_path[0] == '/' && new_path[1] == '\0') {
         return new_path;
     }
@@ -298,7 +278,6 @@ char *canonicalize_path(const char *path) {
 /**
  * Finds the inode number for a given canonicalized path.
  * Returns inode number on success (1-based), 0 on failure.
- * This is the heart of the assignment and requires reading directory inodes.
  */
 uint32_t get_inode_by_path(const char *canonical_path) {
     // Start at root inode 1
@@ -324,15 +303,19 @@ uint32_t get_inode_by_path(const char *canonical_path) {
         minix_inode_t dir_inode;
         if (read_inode(current_inode_num, &dir_inode) != 0) return 0;
         
-        // Must be a directory to continue traversal
+        // Peek ahead to see if this is the last component
+        int is_last_component = (strtok_r(NULL, "", &saveptr) == NULL);
+        // The token is now consumed, so we must restore it for the next loop iteration
+        // by setting it back to the beginning of the next token, or NULL if it was the last.
+
+        // If it's not a directory and not the last component, we fail (e.g., /file/dir)
         if ((dir_inode.mode & 0170000) != 0040000) { 
-            // If it's the last component, we must break and use the current_inode_num (it's the file)
-            if (strtok_r(NULL, "/", &saveptr) == NULL) break;
-            // Otherwise, we failed (trying to traverse into a file)
-            return 0;
+            if (is_last_component) break; // It's the target file itself
+            return 0; // Traversal failed
         }
         
         uint32_t target_inode = 0;
+        size_t token_len = strlen(token);
         
         // Loop through all blocks of the directory file
         for (uint32_t i = 0; i * current_sb.blocksize < dir_inode.size; i++) {
@@ -352,27 +335,27 @@ uint32_t get_inode_by_path(const char *canonical_path) {
                 
                 if (entry->inode == 0) continue; // Deleted entry
 
-                // Compare the current path token with the directory entry name
-                // Use strncmp because the name field is fixed-width (60 chars) and may not be null-terminated
-                if (strncmp(token, (char*)entry->name, 60) == 0) {
-                    // We must also check that the token is not a SUBSTRING of the directory name.
-                    // E.g., comparing "foo" against a directory named "foobar" should fail.
-                    // We check if the name in the directory is null-terminated right after the token's length.
-                    
-                    size_t token_len = strlen(token);
-                    if (token_len < 60 && entry->name[token_len] != '\0') {
-                        // Not a perfect match: e.g., token="foo" but entry->name="foobar\0"
-                        continue;
-                    }
-                    if (token_len == 60) {
-                        // If both are 60 chars, strncmp is enough.
-                        // If token is less than 60, we rely on the directory's null termination
-                        if (token_len != strnlen((char*)entry->name, 60)) continue;
-                    }
-                    
-                    target_inode = entry->inode;
-                    goto found_component;
+                // --- START FIX for strnlen/substring issue (Line 375 was here) ---
+                
+                // 1. Check if token is too long for name field
+                if (token_len > 60) continue;
+
+                // 2. Compare the bytes directly up to the token's length
+                if (memcmp(token, (char*)entry->name, token_len) != 0) {
+                    continue; // Bytes don't match
                 }
+
+                // 3. CRITICAL: Check for substring match. 
+                // The byte immediately after the match MUST be the null terminator ('\0'),
+                // UNLESS the token is exactly 60 characters long.
+                if (token_len < 60 && entry->name[token_len] != '\0') {
+                    continue; // Match failed (e.g., token="foo", entry="foobar")
+                }
+                
+                // Match found!
+                target_inode = entry->inode;
+                goto found_component;
+                // --- END FIX ---
             }
         }
         
@@ -381,6 +364,10 @@ uint32_t get_inode_by_path(const char *canonical_path) {
         if (target_inode == 0) return 0; // Component not found
         
         current_inode_num = target_inode;
+
+        // Reset the token for the next iteration using the saved state from saveptr
+        // Note: The original code's peek ahead consumed the token; this logic assumes the 
+        // original `token = strtok_r(NULL, "/", &saveptr);` is where we left off.
         token = strtok_r(NULL, "/", &saveptr);
     }
     
@@ -427,16 +414,16 @@ void print_verbose_superblock(const char *image_file, int p_num, int s_num) {
     fprintf(stderr, "FS Start (Disk Offset): %ld bytes (Sector: %ld)\n", fs_offset, fs_offset / SECTOR_SIZE);
     
     fprintf(stderr, "\nSuperblock Contents:\n");
-    fprintf(stderr, "  ninodes:         %u\n", current_sb.ninodes);
-    fprintf(stderr, "  i_blocks:        %d\n", current_sb.i_blocks);
-    fprintf(stderr, "  z_blocks:        %d\n", current_sb.z_blocks);
-    fprintf(stderr, "  firstdata:       %u\n", current_sb.firstdata);
-    fprintf(stderr, "  log_zone_size:   %d (zone size: %u)\n", current_sb.log_zone_size, zone_size);
-    fprintf(stderr, "  max_file:        %u\n", current_sb.max_file);
-    fprintf(stderr, "  zones:           %u\n", current_sb.zones);
-    fprintf(stderr, "  magic:           0x%x\n", current_sb.magic);
-    fprintf(stderr, "  blocksize:       %u\n", current_sb.blocksize);
-    fprintf(stderr, "  subversion:      %u\n", current_sb.subversion);
+    fprintf(stderr, "   ninodes:        %u\n", current_sb.ninodes);
+    fprintf(stderr, "   i_blocks:       %d\n", current_sb.i_blocks);
+    fprintf(stderr, "   z_blocks:       %d\n", current_sb.z_blocks);
+    fprintf(stderr, "   firstdata:      %u\n", current_sb.firstdata);
+    fprintf(stderr, "   log_zone_size:  %d (zone size: %u)\n", current_sb.log_zone_size, zone_size);
+    fprintf(stderr, "   max_file:       %u\n", current_sb.max_file);
+    fprintf(stderr, "   zones:          %u\n", current_sb.zones);
+    fprintf(stderr, "   magic:          0x%x\n", current_sb.magic);
+    fprintf(stderr, "   blocksize:      %u\n", current_sb.blocksize);
+    fprintf(stderr, "   subversion:     %u\n", current_sb.subversion);
     fprintf(stderr, "==================================\n");
 }
 
@@ -448,19 +435,19 @@ void print_verbose_inode(uint32_t inode_num, const minix_inode_t *inode) {
     get_permissions_string(inode->mode, perm_str);
     
     fprintf(stderr, "\nFile inode #%u:\n", inode_num);
-    fprintf(stderr, "  mode:            0x%x (%s)\n", inode->mode, perm_str);
-    fprintf(stderr, "  links:           %u\n", inode->links);
-    fprintf(stderr, "  uid:             %u\n", inode->uid);
-    fprintf(stderr, "  gid:             %u\n", inode->gid);
-    fprintf(stderr, "  size:            %u\n", inode->size);
-    fprintf(stderr, "  atime:           %u --- %s", inode->atime, ctime((time_t *)&inode->atime));
-    fprintf(stderr, "  mtime:           %u --- %s", inode->mtime, ctime((time_t *)&inode->mtime));
-    fprintf(stderr, "  ctime:           %u --- %s", inode->ctime, ctime((time_t *)&inode->ctime));
+    fprintf(stderr, "   mode:           0x%x (%s)\n", inode->mode, perm_str);
+    fprintf(stderr, "   links:          %u\n", inode->links);
+    fprintf(stderr, "   uid:            %u\n", inode->uid);
+    fprintf(stderr, "   gid:            %u\n", inode->gid);
+    fprintf(stderr, "   size:           %u\n", inode->size);
+    fprintf(stderr, "   atime:          %u --- %s", inode->atime, ctime((time_t *)&inode->atime));
+    fprintf(stderr, "   mtime:          %u --- %s", inode->mtime, ctime((time_t *)&inode->mtime));
+    fprintf(stderr, "   ctime:          %u --- %s", inode->ctime, ctime((time_t *)&inode->ctime));
 
-    fprintf(stderr, "  Direct zones:\n");
+    fprintf(stderr, "   Direct zones:\n");
     for (int i = 0; i < DIRECT_ZONES; i++) {
-        fprintf(stderr, "    zone[%d] = %u\n", i, inode->zone[i]);
+        fprintf(stderr, "     zone[%d] = %u\n", i, inode->zone[i]);
     }
-    fprintf(stderr, "  indirect:        %u\n", inode->indirect);
-    fprintf(stderr, "  two_indirect:    %u\n", inode->two_indirect);
+    fprintf(stderr, "   indirect:       %u\n", inode->indirect);
+    fprintf(stderr, "   two_indirect:   %u\n", inode->two_indirect);
 }
