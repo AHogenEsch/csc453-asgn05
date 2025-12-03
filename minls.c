@@ -138,7 +138,7 @@ int main(int argc, char *argv[]) {
                 break;
             case 'h':
                 print_usage(argv[0]);
-                return 0;
+                return 1;
             default:
                 print_usage(argv[0]);
                 return 1;
@@ -223,5 +223,7 @@ int main(int argc, char *argv[]) {
     free(canonical_src_path);
     cleanup_filesystem();
 
+    // converting status (representing all internal success/failure states)
+    // to the standard shell convention:
     return (status == 0) ? 0 : 1;
 }
