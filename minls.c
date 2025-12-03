@@ -214,7 +214,7 @@ int main(int argc, char *argv[]) {
              filename = ".";
         }
         
-        // Use a simple version of the list_single_entry logic, passing the full path
+// Use a simple version of the list_single_entry logic, passing the full path
         // which matches the reference output (e.g., /Files/0000_Zones).
         list_single_entry(src_inode_num, filename);
     }
