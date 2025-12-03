@@ -212,6 +212,9 @@ int main(int argc, char *argv[]) {
 //for root itself).
         if (strcmp(filename, "/") == 0) {
              filename = ".";
+        } else if (filename[0] == '/') {
+             // For all other canonical paths, strip the leading slash
+             filename = filename + 1;
         }
         
 // Use a simple version of the list_single_entry logic, passing the full path
