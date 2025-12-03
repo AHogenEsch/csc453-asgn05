@@ -1,9 +1,4 @@
 #include "fs_util.h"
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
-#include <time.h>
-#include <libgen.h> // For strtok_r implementation help
 
 // --- Global State Definitions (Shared across minls/minget via linking) ---
 
