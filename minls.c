@@ -24,12 +24,12 @@ void print_usage(const char *progname) {
     "usage: %s [-v] [-p part [-s subpart]] imagefile [path]\n", progname);
     fprintf(stderr, "Options:\n");
     fprintf(stderr, \
-    "  -p <num>   select primary partition for filesystem (default: none)\n");
+    " -p <num>   select primary partition for filesystem (default: none)\n");
     fprintf(stderr, \
-    "  -s <num>   select subpartition for filesystem (default: none)\n");
-    fprintf(stderr, "  -v         verbose. Print partition table(s), \
+    " -s <num>   select subpartition for filesystem (default: none)\n");
+    fprintf(stderr, " -v         verbose. Print partition table(s), \
     superblock, and source inode to stderr.\n");
-    fprintf(stderr, "  -h         print usage information and exit\n");
+    fprintf(stderr, " -h         print usage information and exit\n");
 }
 
 /**
@@ -204,18 +204,18 @@ int main(int argc, char *argv[]) {
     } else {
         // List the single file or non-directory item itself
         char *filename = canonical_src_path;
-// Strip path to get just the filename for display, unless it's the root
-        if (strcmp(filename, "/") != 0) {
-            char *last_slash = strrchr(filename, '/');
-            if (last_slash) {
-                filename = last_slash + 1;
-            }
-        } else {
-             // For the root directory listing itself as a file, use "."
+
+// If the path is "/", list_single_entry should use "."
+// if the root were passed without a trailing slash, but 
+//here we cover the unlikely case
+// of root being treated as a file or to comply with the reference 
+//for root itself).
+        if (strcmp(filename, "/") == 0) {
              filename = ".";
         }
         
-// Use a simple version of the list_single_entry logic, passing the basename
+        // Use a simple version of the list_single_entry logic, passing the full path
+        // which matches the reference output (e.g., /Files/0000_Zones).
         list_single_entry(src_inode_num, filename);
     }
 
