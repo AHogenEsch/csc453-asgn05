@@ -317,30 +317,35 @@ uint32_t get_inode_by_path(const char *canonical_path) {
         minix_inode_t dir_inode;
         if (read_inode(current_inode_num, &dir_inode) != 0) return 0;
         
-        // CHECK 1: If we have MORE tokens to process (i.e., we are not on the last component), 
+        // CHECK 1: If we have MORE tokens to process 
+        //(i.e., we are not on the last component), 
         // the current inode MUST be a directory.
-        // We are NOT on the last token if saveptr is pointing to the start of a new token
+        // We are NOT on the last token if saveptr 
+        //is pointing to the start of a new token
         // or a delimiter.
         
-        // This is a reliable check: if strtok_r(NULL, "/") next returns non-NULL, 
+        // This is a reliable check: if strtok_r(NULL, "/") 
+        //next returns non-NULL,
         // there is more path to process.
         char *next_token_start = saveptr;
         
-        // We need to look up the current component ('token') in 'current_inode_num'.
+        // We need to look up the current component ('token') 
+        //in 'current_inode_num'.
         uint32_t target_inode = 0;
         size_t token_len = strlen(token);
         
-        // If this is NOT the last component (next_token_start is non-NULL or not '\0'), 
-        // AND the current inode is not a directory, we fail traversal immediately.
-        if (*next_token_start != '\0' && (dir_inode.mode & 0170000) != 0040000) { 
+        // If this is NOT the last component (next_token_start 
+        //is non-NULL or not '\0'), 
+        // AND the current inode is not a directory, we fail 
+        //traversal immediately.
+        if (*next_token_start != '\0' && \
+            (dir_inode.mode & 0170000) != 0040000) {
             // This is a file in the middle of a path, like /file/directory
             return 0; // Traversal failed
         }
-        
-        // --- Look up component in current directory's data blocks (logic unchanged) ---
         // ... (Directory lookup loop using token and dir_inode) ...
         
-        // Loop through all blocks of the directory file (rest of your original lookup code)
+        // Loop through all blocks of the directory file
         for (uint32_t i = 0; i * current_sb.blocksize < dir_inode.size; i++) {
             uint32_t disk_block = get_file_block(&dir_inode, i);
             if (disk_block == 0) continue; 
@@ -348,7 +353,8 @@ uint32_t get_inode_by_path(const char *canonical_path) {
             off_t block_offset = (off_t)disk_block * current_sb.blocksize;
             
             uint8_t dir_block_buf[current_sb.blocksize];
-            if (read_fs_bytes(block_offset, dir_block_buf, current_sb.blocksize) != 0) continue;
+            if (read_fs_bytes(block_offset, \
+                dir_block_buf, current_sb.blocksize) != 0) continue;
             
             for (uint32_t j = 0; j*DIR_ENTRY_SIZE < current_sb.blocksize;j++){
                 minix_dir_entry_t *entry = \
@@ -356,7 +362,7 @@ uint32_t get_inode_by_path(const char *canonical_path) {
                 
                 if (entry->inode == 0) continue; 
                 
-                // Compare token to entry->name (must ensure accurate comparison)
+    // Compare token to entry->name (must ensure accurate comparison)
                 if (token_len > 60) continue;
 
                 if (strncmp(token, (char*)entry->name, token_len) != 0) {
@@ -364,7 +370,7 @@ uint32_t get_inode_by_path(const char *canonical_path) {
                 }
 
                 if (token_len < 60 && entry->name[token_len] != '\0') {
-                    continue; 
+                    continue; 
                 }
                 
                 // Match found!
@@ -376,13 +382,14 @@ uint32_t get_inode_by_path(const char *canonical_path) {
         found_component:
         
         if (target_inode == 0) return 0; // Component not found
-         
+         
         current_inode_num = target_inode;
 
-        // Get the next path component: This is the only call to strtok_r that advances state.
+// Get the next path component: This is the only call to 
+// strtok_r that advances state.
         token = strtok_r(NULL, "/", &saveptr);
     }
-     
+    
     return current_inode_num;
 }
 
