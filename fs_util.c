@@ -297,12 +297,12 @@ char *canonicalize_path(const char *path) {
  * Returns inode number on success (1-based), 0 on failure.
  */
 uint32_t get_inode_by_path(const char *canonical_path) {
-    // Start at root inode 1
-    uint32_t current_inode_num = 1; 
+    // Start at root inode 2
+    uint32_t current_inode_num = 2; 
     
     // Handle the root path quickly
     if (strcmp(canonical_path, "/") == 0) {
-        return 1;
+        return current_inode_num;
     }
 
     char path_copy[1024];
