@@ -19,17 +19,22 @@ extern minix_superblock_t current_sb;
  * Prints the usage message for minget.
  */
 void print_usage(const char *progname) {
-    fprintf(stderr, "usage: %s [-v] [-p part [-s subpart]] imagefile srcpath [dstpath]\n", progname);
+    fprintf(stderr, "usage: %s [-v] [-p part [-s subpart]] \
+    imagefile srcpath [dstpath]\n", progname);
     fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  -p <num>   select primary partition for filesystem (default: none)\n");
-    fprintf(stderr, "  -s <num>   select subpartition for filesystem (default: none)\n");
-    fprintf(stderr, "  -v         verbose. Print partition table(s), superblock, and source inode to stderr.\n");
+    fprintf(stderr, "  -p <num>   select primary partition \
+    for filesystem (default: none)\n");
+    fprintf(stderr, "  -s <num>   select subpartition for \
+    filesystem (default: none)\n");
+    fprintf(stderr, "  -v         verbose. Print partition \
+    table(s), superblock, and source inode to stderr.\n");
     fprintf(stderr, "  -h         print usage information and exit\n");
 }
 
 /**
- * Copies the contents of the file described by the inode to the destination file pointer.
- * Handles block translation, file size, and potential holes (zone 0).
+ * Copies the contents of the file described by the inode to the 
+ * destination file pointer. Handles block translation, file size, 
+ * and potential holes (zone 0).
  * Returns 0 on success, -1 on failure.
  */
 int copy_file_data(const minix_inode_t *inode, FILE *dest_fp) {
@@ -45,14 +50,16 @@ int copy_file_data(const minix_inode_t *inode, FILE *dest_fp) {
     }
 
     if (is_verbose) {
-        fprintf(stderr, "Starting copy. File size: %u bytes. Block size: %u.\n", 
-                remaining_size, current_sb.blocksize);
+        fprintf(stderr,
+            "Starting copy. File size: %u bytes. Block size: %u.\n", 
+            remaining_size, current_sb.blocksize);
     }
     
     // Loop until all bytes are copied
     while (remaining_size > 0) {
         // 1. Get the disk block number for the current logical block
-        uint32_t disk_block_num = get_file_block(inode, current_logical_block);
+        uint32_t disk_block_num = \
+        get_file_block(inode, current_logical_block);
 
         // Calculate how many bytes to read/write in this iteration
         uint32_t bytes_to_copy = current_sb.blocksize;
@@ -63,15 +70,16 @@ int copy_file_data(const minix_inode_t *inode, FILE *dest_fp) {
         if (disk_block_num == 0) {
             // Zone 0 indicates a file hole: skip reading, write zeros.
             if (is_verbose) {
-                fprintf(stderr, "  [LBlock %u] Hole found. Writing %u zeros.\n", 
-                        current_logical_block, bytes_to_copy);
+                fprintf(stderr, 
+                    "  [LBlock %u] Hole found. Writing %u zeros.\n",
+                    current_logical_block, bytes_to_copy);
             }
             
             // Set the buffer to zeros for the hole's content
             memset(block_buf, 0, bytes_to_copy);
             
             // Write the zeroed data to the destination
-            if (fwrite(block_buf, 1, bytes_to_copy, dest_fp) != bytes_to_copy) {
+            if (fwrite(block_buf,1, bytes_to_copy, dest_fp) != bytes_to_copy){
                 perror("Error writing zero data for file hole");
                 free(block_buf);
                 return -1;
@@ -83,19 +91,24 @@ int copy_file_data(const minix_inode_t *inode, FILE *dest_fp) {
             off_t disk_offset = (off_t)disk_block_num * current_sb.blocksize;
             
             if (is_verbose) {
-                fprintf(stderr, "  [LBlock %u] Disk Block %u (Offset %ld). Copying %u bytes.\n", 
-                        current_logical_block, disk_block_num, fs_offset + disk_offset, bytes_to_copy);
+                fprintf(stderr, \
+            "  [LBlock %u] Disk Block %u (Offset %ld). Copying %u bytes.\n",
+                    current_logical_block, disk_block_num,
+                    fs_offset + disk_offset, bytes_to_copy);
             }
             
             // Read the block from the disk image
-            if (read_fs_bytes(disk_offset, block_buf, current_sb.blocksize) != 0) {
-                fprintf(stderr, "Error reading data block %u from image.\n", disk_block_num);
+            if (read_fs_bytes(disk_offset, block_buf, \
+                current_sb.blocksize) != 0) {
+                fprintf(stderr, "Error reading data block %u from image.\n", \
+                    disk_block_num);
                 free(block_buf);
                 return -1;
             }
 
             // Write the data to the destination
-            if (fwrite(block_buf, 1, bytes_to_copy, dest_fp) != bytes_to_copy) {
+            if (fwrite(block_buf, 1, bytes_to_copy, \
+                dest_fp) != bytes_to_copy) {
                 perror("Error writing file data to destination");
                 free(block_buf);
                 return -1;
@@ -144,7 +157,8 @@ int main(int argc, char *argv[]) {
 
     // Check for required arguments: imagefile and srcpath
     if (argc - optind < 2) {
-        fprintf(stderr, "Error: Missing required arguments (imagefile, srcpath).\n");
+        fprintf(stderr, "Error: Missing required arguments \
+            (imagefile, srcpath).\n");
         print_usage(argv[0]);
         return 1;
     }
@@ -166,7 +180,7 @@ int main(int argc, char *argv[]) {
     // --- 3. Canonicalize Path and Find Inode ---
     char *canonical_src_path = canonicalize_path(src_path);
     if (!canonical_src_path) {
-        fprintf(stderr, "Error: Failed to canonicalize path: %s\n", src_path);
+        fprintf(stderr, "Error: Failed to canonicalize path: %s\n",src_path);
         cleanup_filesystem();
         return 1;
     }
@@ -190,7 +204,8 @@ int main(int argc, char *argv[]) {
 
     // Check if it's a regular file (0100000 mask)
     if ((src_inode.mode & 0170000) != 0100000) {
-        fprintf(stderr, "minget: %s is not a regular file.\n", canonical_src_path);
+        fprintf(stderr, \
+        "minget: %s is not a regular file.\n", canonical_src_path);
         free(canonical_src_path);
         cleanup_filesystem();
         return 1;
@@ -205,7 +220,7 @@ int main(int argc, char *argv[]) {
     int file_descriptor = -1;
 
     if (dst_path) {
-        // Open file for writing, create if it doesn't exist, truncate if it does.
+// Open file for writing, create if it doesn't exist, truncate if it does.
         file_descriptor = open(dst_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
         if (file_descriptor < 0) {
             perror("Error opening destination file");

@@ -87,7 +87,8 @@ extern int is_verbose;
 // --- Function Prototypes (Exposed API for minls/minget) ---
 
 // File System Initialization
-int init_filesystem(const char *image_file, int p_num, int s_num, int verbose_flag);
+int init_filesystem(const char *image_file, int p_num, int s_num,\
+     int verbose_flag);
 void cleanup_filesystem(void);
 
 // Low-Level I/O

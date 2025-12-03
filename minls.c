@@ -20,11 +20,15 @@ int list_directory_contents(uint32_t dir_inode_num, const char *dir_path);
  * Prints the usage message for minls.
  */
 void print_usage(const char *progname) {
-    fprintf(stderr, "usage: %s [-v] [-p part [-s subpart]] imagefile [path]\n", progname);
+    fprintf(stderr, \
+    "usage: %s [-v] [-p part [-s subpart]] imagefile [path]\n", progname);
     fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  -p <num>   select primary partition for filesystem (default: none)\n");
-    fprintf(stderr, "  -s <num>   select subpartition for filesystem (default: none)\n");
-    fprintf(stderr, "  -v         verbose. Print partition table(s), superblock, and source inode to stderr.\n");
+    fprintf(stderr, \
+    "  -p <num>   select primary partition for filesystem (default: none)\n");
+    fprintf(stderr, \
+    "  -s <num>   select subpartition for filesystem (default: none)\n");
+    fprintf(stderr, \
+    "  -v         verbose. Print partition table(s), superblock, and source inode to stderr.\n");
     fprintf(stderr, "  -h         print usage information and exit\n");
 }
 
@@ -38,7 +42,8 @@ void list_single_entry(uint32_t entry_inode_num, const char *name) {
     char perm_str[11];
 
     if (read_inode(entry_inode_num, &entry_inode) != 0) {
-        fprintf(stderr, "Error: Could not read inode %u for entry %s.\n", entry_inode_num, name);
+        fprintf(stderr, "Error: Could not read inode %u for entry %s.\n", \
+            entry_inode_num, name);
         return;
     }
 
@@ -46,7 +51,8 @@ void list_single_entry(uint32_t entry_inode_num, const char *name) {
     get_permissions_string(entry_inode.mode, perm_str);
 
     // Output format: [permissions] [size] [filename]
-    // The size field must be right-justified to 9 bits, with a space on either side.
+    // The size field must be right-justified to 9 bits, 
+    // with a space on either side.
     printf("%s %9u %s\n", perm_str, entry_inode.size, name);
 }
 
@@ -57,7 +63,8 @@ void list_single_entry(uint32_t entry_inode_num, const char *name) {
 int list_directory_contents(uint32_t dir_inode_num, const char *dir_path) {
     minix_inode_t dir_inode;
     if (read_inode(dir_inode_num, &dir_inode) != 0) {
-        fprintf(stderr, "minls: Failed to read directory inode %u.\n", dir_inode_num);
+        fprintf(stderr, "minls: Failed to read directory inode %u.\n", \
+            dir_inode_num);
         return -1;
     }
 
@@ -78,8 +85,10 @@ int list_directory_contents(uint32_t dir_inode_num, const char *dir_path) {
 
         // Read block content into a buffer for directory entries
         uint8_t dir_block_buf[current_sb.blocksize];
-        if (read_fs_bytes(block_offset, dir_block_buf, current_sb.blocksize) != 0) {
-            fprintf(stderr, "minls: Error reading directory data block %u.\n", disk_block);
+        if (read_fs_bytes(block_offset, dir_block_buf, \
+            current_sb.blocksize) != 0) {
+            fprintf(stderr, \
+            "minls: Error reading directory data block %u.\n", disk_block);
             continue;
         }
 
@@ -87,12 +96,14 @@ int list_directory_contents(uint32_t dir_inode_num, const char *dir_path) {
         uint32_t entries_per_block = current_sb.blocksize / DIR_ENTRY_SIZE;
         for (uint32_t j = 0; j < entries_per_block; j++) {
             // Cast the buffer section to the entry structure
-            minix_dir_entry_t *entry = (minix_dir_entry_t *)(dir_block_buf + j * DIR_ENTRY_SIZE);
+            minix_dir_entry_t *entry = \
+            (minix_dir_entry_t *)(dir_block_buf + j * DIR_ENTRY_SIZE);
 
             if (entry->inode == 0) continue; // Skip deleted/invalid entries
 
-            // Directory entry names are 60 bytes, often not null-terminated perfectly
-            // Copy the name to ensure it is null-terminated before passing to list_single_entry
+// Directory entry names are 60 bytes, often not null-terminated perfectly
+// Copy the name to ensure it is null-terminated before 
+// passing to list_single_entry
             char entry_name[61];
             strncpy(entry_name, (char*)entry->name, 60);
             entry_name[60] = '\0';
@@ -193,7 +204,7 @@ int main(int argc, char *argv[]) {
     } else {
         // List the single file or non-directory item itself
         char *filename = canonical_src_path;
-        // Strip path to get just the filename for display, unless it's the root
+// Strip path to get just the filename for display, unless it's the root
         if (strcmp(filename, "/") != 0) {
             char *last_slash = strrchr(filename, '/');
             if (last_slash) {
@@ -204,7 +215,7 @@ int main(int argc, char *argv[]) {
              filename = ".";
         }
         
-        // Use a simple version of the list_single_entry logic, passing the basename
+// Use a simple version of the list_single_entry logic, passing the basename
         list_single_entry(src_inode_num, filename);
     }
 
