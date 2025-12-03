@@ -459,7 +459,7 @@ uint32_t get_inode_by_path(const char *canonical_path) {
             
             // This is the error message required by test 119 and 120
             fprintf(stderr, "%s: trying to traverse a file: %s\n", 
-                    __progname, canonical_path);
+                    canonical_path);
             return 0; // Traversal failed
         }
           
