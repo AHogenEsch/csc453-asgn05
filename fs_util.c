@@ -297,77 +297,74 @@ char *canonicalize_path(const char *path) {
  * Returns inode number on success (1-based), 0 on failure.
  */
 uint32_t get_inode_by_path(const char *canonical_path) {
-    // Start at root inode 2
-    uint32_t current_inode_num = 2; 
-    
+    uint32_t current_inode_num = 1;
     // Handle the root path quickly
     if (strcmp(canonical_path, "/") == 0) {
         return current_inode_num;
     }
 
     char path_copy[1024];
-    strncpy(path_copy, canonical_path, 1024);
+    // Copy the path, skipping the leading '/'
+    strncpy(path_copy, canonical_path + 1, 1023);
     path_copy[1023] = '\0';
-    
     char *token;
-    char *saveptr;
-    
-    // Skip the leading '/' for tokenizing
-    token = strtok_r(path_copy + 1, "/", &saveptr); 
+    char *saveptr = NULL; // Initialize saveptr
+    // Start tokenizing from the first component
+    token = strtok_r(path_copy, "/", &saveptr);
 
     // Loop through path components
     while (token != NULL) {
         minix_inode_t dir_inode;
         if (read_inode(current_inode_num, &dir_inode) != 0) return 0;
         
-        // Peek ahead to see if this is the last component
-        int is_last_component = (strtok_r(NULL, "", &saveptr) == NULL);
-// The token is now consumed, so we must restore it for the nxt loop iteration
-// by setting it back to the beginning of the next token, 
-// or NULL if it was the last.
-
-// If it's not a directory and not the last component, we fail (/file/dir)
-        if ((dir_inode.mode & 0170000) != 0040000) { 
-            if (is_last_component) break; // It's the target file itself
-            return 0; // Traversal failed
-        }
+        // CHECK 1: If we have MORE tokens to process (i.e., we are not on the last component), 
+        // the current inode MUST be a directory.
+        // We are NOT on the last token if saveptr is pointing to the start of a new token
+        // or a delimiter.
         
+        // This is a reliable check: if strtok_r(NULL, "/") next returns non-NULL, 
+        // there is more path to process.
+        char *next_token_start = saveptr;
+        
+        // We need to look up the current component ('token') in 'current_inode_num'.
         uint32_t target_inode = 0;
         size_t token_len = strlen(token);
         
-        // Loop through all blocks of the directory file
+        // If this is NOT the last component (next_token_start is non-NULL or not '\0'), 
+        // AND the current inode is not a directory, we fail traversal immediately.
+        if (*next_token_start != '\0' && (dir_inode.mode & 0170000) != 0040000) { 
+            // This is a file in the middle of a path, like /file/directory
+            return 0; // Traversal failed
+        }
+        
+        // --- Look up component in current directory's data blocks (logic unchanged) ---
+        // ... (Directory lookup loop using token and dir_inode) ...
+        
+        // Loop through all blocks of the directory file (rest of your original lookup code)
         for (uint32_t i = 0; i * current_sb.blocksize < dir_inode.size; i++) {
             uint32_t disk_block = get_file_block(&dir_inode, i);
-            if (disk_block == 0) continue; // Hole
+            if (disk_block == 0) continue; 
             
             off_t block_offset = (off_t)disk_block * current_sb.blocksize;
             
-            // Read block content into a buffer for directory entries
             uint8_t dir_block_buf[current_sb.blocksize];
-            if (read_fs_bytes(block_offset, dir_block_buf, \
-                current_sb.blocksize) != 0) continue;
+            if (read_fs_bytes(block_offset, dir_block_buf, current_sb.blocksize) != 0) continue;
             
-            // Loop through directory entries in the block
             for (uint32_t j = 0; j*DIR_ENTRY_SIZE < current_sb.blocksize;j++){
-                // Cast the buffer section to the entry structure
                 minix_dir_entry_t *entry = \
                 (minix_dir_entry_t *)(dir_block_buf + j * DIR_ENTRY_SIZE);
                 
-                if (entry->inode == 0) continue; // Deleted entry
+                if (entry->inode == 0) continue; 
                 
-                // 1. Check if token is too long for name field
+                // Compare token to entry->name (must ensure accurate comparison)
                 if (token_len > 60) continue;
 
-                // 2. Compare the bytes directly up to the token's length
-                if (memcmp(token, (char*)entry->name, token_len) != 0) {
-                    continue; // Bytes don't match
+                if (strncmp(token, (char*)entry->name, token_len) != 0) {
+                    continue; 
                 }
 
-// The byte immediately after the match MUST be the null terminator ('\0'),
-// UNLESS the token is exactly 60 characters long.
                 if (token_len < 60 && entry->name[token_len] != '\0') {
-                    // Match failed (e.g., token="foo", entry="foobar")
-                    continue; 
+                    continue; 
                 }
                 
                 // Match found!
@@ -379,15 +376,13 @@ uint32_t get_inode_by_path(const char *canonical_path) {
         found_component:
         
         if (target_inode == 0) return 0; // Component not found
-        
+         
         current_inode_num = target_inode;
 
-// Reset the token for the next iteration using the saved state from saveptr
-// ~The original code's peek ahead consumed the token; this logic assumes the
-// original `token = strtok_r(NULL, "/", &saveptr);` is where we left off.
+        // Get the next path component: This is the only call to strtok_r that advances state.
         token = strtok_r(NULL, "/", &saveptr);
     }
-    
+     
     return current_inode_num;
 }
 
