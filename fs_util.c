@@ -456,7 +456,7 @@ uint32_t get_inode_by_path(const char *canonical_path) {
             (target_inode_data.mode & 0170000) != 0040000) {
             
             // This is the error message required by test 119 and 120
-            fprintf(stderr, "%s: trying to traverse a file: %s\n", 
+            fprintf(stderr, "%s: trying to traverse a file: %s\n", \
                     canonical_path);
             return 0; // Traversal failed
         }
@@ -532,6 +532,7 @@ void print_verbose_superblock(const char *image_file, int p_num, int s_num) {
 */
 void print_verbose_inode(uint32_t inode_num, const minix_inode_t *inode) {
     char perm_str[11];
+    int i;
     get_permissions_string(inode->mode, perm_str);
     
     fprintf(stderr, "\nFile inode #%u:\n", inode_num);
@@ -548,7 +549,7 @@ void print_verbose_inode(uint32_t inode_num, const minix_inode_t *inode) {
         ctime((time_t *)&inode->ctime));
 
     fprintf(stderr, "  Direct zones:\n");
-    for (int i = 0; i < DIRECT_ZONES; i++) {
+    for (i = 0; i < DIRECT_ZONES; i++) {
         fprintf(stderr, "   zone[%d] = %u\n", i, inode->zone[i]);
     }
     fprintf(stderr, "  indirect:    %u\n", inode->indirect);
