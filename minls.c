@@ -62,6 +62,8 @@ void list_single_entry(uint32_t entry_inode_num, const char *name) {
  */
 int list_directory_contents(uint32_t dir_inode_num, const char *dir_path) {
     minix_inode_t dir_inode;
+    uint32_t i;
+    uint32_t j;
     if (read_inode(dir_inode_num, &dir_inode) != 0) {
         fprintf(stderr, "minls: Failed to read directory inode %u.\n", \
             dir_inode_num);
@@ -77,7 +79,7 @@ int list_directory_contents(uint32_t dir_inode_num, const char *dir_path) {
     }
 
     // Loop through all blocks of the directory file
-    for (uint32_t i = 0; i * current_sb.blocksize < dir_inode.size; i++) {
+    for (i = 0; i * current_sb.blocksize < dir_inode.size; i++) {
         uint32_t disk_block = get_file_block(&dir_inode, i);
         if (disk_block == 0) continue; // Skip file holes
 
@@ -94,7 +96,7 @@ int list_directory_contents(uint32_t dir_inode_num, const char *dir_path) {
 
         // Loop through directory entries in the block
         uint32_t entries_per_block = current_sb.blocksize / DIR_ENTRY_SIZE;
-        for (uint32_t j = 0; j < entries_per_block; j++) {
+        for (j = 0; j < entries_per_block; j++) {
             // Cast the buffer section to the entry structure
             minix_dir_entry_t *entry = \
             (minix_dir_entry_t *)(dir_block_buf + j * DIR_ENTRY_SIZE);

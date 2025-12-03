@@ -389,6 +389,8 @@ uint32_t get_inode_by_path(const char *canonical_path) {
     // Loop through path components
     while (token != NULL) {
         minix_inode_t dir_inode;
+        uint32_t i;
+        uint32_t j;
         if (read_inode(current_inode_num, &dir_inode) != 0) return 0;
         
         // saveptr now points to the character *after* the delimiter,
@@ -399,7 +401,7 @@ uint32_t get_inode_by_path(const char *canonical_path) {
         size_t token_len = strlen(token);
         
         // Loop through all blocks of the directory file
-        for (uint32_t i = 0; i * current_sb.blocksize < dir_inode.size; i++) {
+        for (i= 0; i * current_sb.blocksize < dir_inode.size; i++) {
             uint32_t disk_block = get_file_block(&dir_inode, i);
             if (disk_block == 0) continue; 
             
@@ -409,7 +411,7 @@ uint32_t get_inode_by_path(const char *canonical_path) {
             if (read_fs_bytes(block_offset, 
                 dir_block_buf, current_sb.blocksize) != 0) continue;
             
-            for (uint32_t j = 0; j*DIR_ENTRY_SIZE < current_sb.blocksize;j++){
+            for (j = 0; j*DIR_ENTRY_SIZE < current_sb.blocksize;j++){
                 minix_dir_entry_t *entry = 
                 (minix_dir_entry_t *)(dir_block_buf + j * DIR_ENTRY_SIZE);
                 
