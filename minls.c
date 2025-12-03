@@ -27,8 +27,8 @@ void print_usage(const char *progname) {
     "  -p <num>   select primary partition for filesystem (default: none)\n");
     fprintf(stderr, \
     "  -s <num>   select subpartition for filesystem (default: none)\n");
-    fprintf(stderr, \
-    "  -v         verbose. Print partition table(s), superblock, and source inode to stderr.\n");
+    fprintf(stderr, "  -v         verbose. Print partition table(s), \
+    superblock, and source inode to stderr.\n");
     fprintf(stderr, "  -h         print usage information and exit\n");
 }
 
