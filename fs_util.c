@@ -14,27 +14,56 @@ uint32_t zone_size = 0;
 uint32_t blocks_per_zone = 0; // Calculated from log_zone_size
 int is_verbose = 0; // Set by init_filesystem
 
+// --- Helper: Reads and validates the Master Boot Record (MBR) ---
+// Returns 0 on success (buffer filled, magic good), -1 on failure.
+static int read_mbr_and_check_magic(off_t table_addr, uint8_t mbr_buffer[512]) {
+    // The MBR is 512 bytes long (1 sector)
+    if (fseek(image_fp, table_addr - PARTITION_TABLE_OFFSET, SEEK_SET) != 0) {
+        fprintf(stderr, 
+        "Error: fseek to MBR offset %ld failed.\n", 
+        table_addr - PARTITION_TABLE_OFFSET);
+        return -1;
+    }
+    
+    // Read the entire 512-byte MBR block
+    if (fread(mbr_buffer, 1, SECTOR_SIZE, image_fp) != SECTOR_SIZE) {
+        fprintf(stderr, 
+        "Error: Failed to read MBR at offset %ld.\n", 
+        table_addr - PARTITION_TABLE_OFFSET);
+        return -1;
+    }
+    
+    // Check the MBR signature (Magic Number) at offsets 510 and 511
+    // The required value is 0x55AA
+    if (mbr_buffer[510] != 0x55 || mbr_buffer[511] != 0xAA) {
+        // This is the check that was failing the tests (117, 118)
+        fprintf(stderr, "Partition table with bad magic: 0x%02x%02x\n", 
+            mbr_buffer[511], mbr_buffer[510]);
+        return -1;
+    }
+    
+    return 0; // Magic check passed
+}
+
 // --- Helper: Reads Partition Entry from absolute disk offset --- 
+// table_addr is the offset to the partition table entries (0x1BE)
 static uint32_t get_partition_start(int part_num, off_t table_addr) {
-    partition_entry_t pt[4]; 
-    
-    // Seek to the partition table address 
-    if (fseek(image_fp, table_addr, SEEK_SET) != 0) {
-        fprintf(stderr, \
-        "Error: fseek to partition table offset %ld failed.\n", table_addr);
-        return 0;
+    uint8_t mbr_buffer[SECTOR_SIZE]; // 512 bytes for MBR
+
+    // 1. Read MBR and validate magic
+    if (read_mbr_and_check_magic(table_addr, mbr_buffer) != 0) {
+        return 0; // Failure handled inside read_mbr_and_check_magic
     }
-    
-    // Read all 4 entries
-    if (fread(pt, sizeof(partition_entry_t), 4, image_fp) != 4) {
-        fprintf(stderr, \
-    "Error: Failed to read 4 partition entries at offset %ld.\n", table_addr);
-        return 0;
-    }
+
+    // Now, the partition entries start at table_addr (offset 0x1BE or 446)
+    // The table_addr we pass is relative to the start of the disk/partition,
+    // so we get the entry pointer relative to the buffer start.
+    partition_entry_t *pt = 
+        (partition_entry_t *)(mbr_buffer + PARTITION_TABLE_OFFSET);
     
     // Check partition number validity
     if (part_num < 0 || part_num >= 4) {
-        fprintf(stderr, \
+        fprintf(stderr, 
     "Partition number %d is out of range (0-3).\n", part_num);
         return 0;
     }
@@ -42,7 +71,7 @@ static uint32_t get_partition_start(int part_num, off_t table_addr) {
     // Check MINIX type (0x81)
     if (pt[part_num].type != 0x81) {
         fprintf(stderr, "Partition %d is type 0x%02x, \
-            not a MINIX partition (0x81).\n", part_num, pt[part_num].type);
+        not a MINIX partition (0x81).\n", part_num, pt[part_num].type);
         return 0;
     }
     
@@ -53,10 +82,10 @@ static uint32_t get_partition_start(int part_num, off_t table_addr) {
 
 // --- 1. Low-Level I/O ---
 
-/**  * Reads bytes from the disk image relative to the 
- * filesystem start (fs_offset).
- * Returns 0 on success, -1 on failure.
- */
+/** * Reads bytes from the disk image relative to the 
+* filesystem start (fs_offset).
+* Returns 0 on success, -1 on failure.
+*/
 int read_fs_bytes(off_t offset_from_fs_start, void *buffer, size_t nbytes) {
     off_t abs_offset = fs_offset + offset_from_fs_start;
     
@@ -78,9 +107,9 @@ int read_fs_bytes(off_t offset_from_fs_start, void *buffer, size_t nbytes) {
 // --- 2. Filesystem Initialization ---
 
 /**
- * Initializes the global state (fs_offset, superblock).
- * Returns 0 on success, -1 on failure.
- */
+* Initializes the global state (fs_offset, superblock).
+* Returns 0 on success, -1 on failure.
+*/
 int init_filesystem(const char *image_file, int p_num, int s_num, \
     int verbose_flag) {
     is_verbose = verbose_flag;
@@ -96,9 +125,13 @@ int init_filesystem(const char *image_file, int p_num, int s_num, \
     fs_offset = 0; // Default to unpartitioned
     
     if (p_num != -1) {
+        // Primary partition table is at disk offset 0 + 0x1BE
         uint32_t p_start_sector = get_partition_start(p_num, \
             PARTITION_TABLE_OFFSET);
-        if (p_start_sector == 0) return -1;
+        if (p_start_sector == 0) {
+            // Error already printed in get_partition_start
+            return -1; 
+        }
         
         fs_offset = (long)p_start_sector * SECTOR_SIZE;
         
@@ -109,7 +142,10 @@ int init_filesystem(const char *image_file, int p_num, int s_num, \
             uint32_t s_start_sector_rel_disk = \
             get_partition_start(s_num, sub_pt_addr);
             
-            if (s_start_sector_rel_disk == 0) return -1;
+            if (s_start_sector_rel_disk == 0) {
+                // Error already printed in get_partition_start
+                return -1; 
+            }
             
             // The subpartition's LBA is relative to the disk start, 
             // so we update fs_offset
@@ -143,8 +179,8 @@ int init_filesystem(const char *image_file, int p_num, int s_num, \
 }
 
 /**
- * Cleans up global state, closing the file pointer.
- */
+* Cleans up global state, closing the file pointer.
+*/
 void cleanup_filesystem(void) {
     if (image_fp) {
         fclose(image_fp);
@@ -156,9 +192,9 @@ void cleanup_filesystem(void) {
 // --- 3. Inode and Block Access ---
 
 /**
- * Reads an inode into the provided structure.
- * Returns 0 on success, -1 on failure.
- */
+* Reads an inode into the provided structure.
+* Returns 0 on success, -1 on failure.
+*/
 int read_inode(uint32_t inode_num, minix_inode_t *inode_out) {
     if (inode_num == 0 || inode_num > current_sb.ninodes) {
         return -1;
@@ -179,11 +215,11 @@ int read_inode(uint32_t inode_num, minix_inode_t *inode_out) {
 }
 
 /**
- * Converts a logical block number (from the start of the file) to an
- * absolute block number on disk (relative to the FS start).
- * Returns the absolute block number on disk (0 for holes/invalid).
- * NOTE: For MINIX v3, zones are typically 1 block (log_zone_size=0).
- */
+* Converts a logical block number (from the start of the file) to an
+* absolute block number on disk (relative to the FS start).
+* Returns the absolute block number on disk (0 for holes/invalid).
+* NOTE: For MINIX v3, zones are typically 1 block (log_zone_size=0).
+*/
 uint32_t get_file_block(const minix_inode_t *inode, uint32_t logical_block) {
     uint32_t zone_num = 0;
     uint32_t blocks_per_zone_val = 1 << current_sb.log_zone_size;
@@ -274,9 +310,9 @@ uint32_t get_file_block(const minix_inode_t *inode, uint32_t logical_block) {
 // --- 4. Path Traversal ---
 
 /**
- * Removes duplicate slashes and ensures a single leading slash.
- * Returns a newly allocated, canonicalized path string. Caller must free.
- */
+* Removes duplicate slashes and ensures a single leading slash.
+* Returns a newly allocated, canonicalized path string. Caller must free.
+*/
 char *canonicalize_path(const char *path) {
     if (!path || path[0] == '\0') {
         char *p = malloc(2);
@@ -332,9 +368,9 @@ char *canonicalize_path(const char *path) {
 }
 
 /**
- * Finds the inode number for a given canonicalized path.
- * Returns inode number on success (1-based), 0 on failure.
- */
+* Finds the inode number for a given canonicalized path.
+* Returns inode number on success (1-based), 0 on failure.
+*/
 uint32_t get_inode_by_path(const char *canonical_path) {
     uint32_t current_inode_num = 1;
     // Handle the root path quickly
@@ -412,7 +448,7 @@ uint32_t get_inode_by_path(const char *canonical_path) {
         found_component:
         
         if (target_inode == 0) return 0; // Component not found
-         
+          
         current_inode_num = target_inode;
 
 // Get the next path component: This is the only call to 
@@ -427,9 +463,9 @@ uint32_t get_inode_by_path(const char *canonical_path) {
 // --- 5. Utility/Formatting ---
 
 /**
- * Populates a 11-character string (10 chars + null terminator) with
- * Unix-style permission bits based on the inode mode.
- */
+* Populates a 11-character string (10 chars + null terminator) with
+* Unix-style permission bits based on the inode mode.
+*/
 void get_permissions_string(uint16_t mode, char *perm_str) {
     // File Type (0170000 mask)
     perm_str[0] = ((mode & 0170000) == 0040000) ? 'd' : '-'; 
@@ -455,8 +491,8 @@ void get_permissions_string(uint16_t mode, char *perm_str) {
 // --- 6. Verbose Output ---
 
 /**
- * Prints Superblock and Partition info to stderr for -v flag.
- */
+* Prints Superblock and Partition info to stderr for -v flag.
+*/
 void print_verbose_superblock(const char *image_file, int p_num, int s_num) {
     fprintf(stderr, "\n=== VERBOSE MODE (fs_util.c) ===\n");
     fprintf(stderr, "Image File: %s\n", image_file);
@@ -465,44 +501,44 @@ void print_verbose_superblock(const char *image_file, int p_num, int s_num) {
         fs_offset, fs_offset / SECTOR_SIZE);
     
     fprintf(stderr, "\nSuperblock Contents:\n");
-    fprintf(stderr, "   ninodes:        %u\n", current_sb.ninodes);
-    fprintf(stderr, "   i_blocks:       %d\n", current_sb.i_blocks);
-    fprintf(stderr, "   z_blocks:       %d\n", current_sb.z_blocks);
-    fprintf(stderr, "   firstdata:      %u\n", current_sb.firstdata);
-    fprintf(stderr, "   log_zone_size:  %d (zone size: %u)\n", \
+    fprintf(stderr, "  ninodes:    %u\n", current_sb.ninodes);
+    fprintf(stderr, "  i_blocks:    %d\n", current_sb.i_blocks);
+    fprintf(stderr, "  z_blocks:    %d\n", current_sb.z_blocks);
+    fprintf(stderr, "  firstdata:   %u\n", current_sb.firstdata);
+    fprintf(stderr, "  log_zone_size: %d (zone size: %u)\n", \
         current_sb.log_zone_size, zone_size);
-    fprintf(stderr, "   max_file:       %u\n", current_sb.max_file);
-    fprintf(stderr, "   zones:          %u\n", current_sb.zones);
-    fprintf(stderr, "   magic:          0x%x\n", current_sb.magic);
-    fprintf(stderr, "   blocksize:      %u\n", current_sb.blocksize);
-    fprintf(stderr, "   subversion:     %u\n", current_sb.subversion);
+    fprintf(stderr, "  max_file:    %u\n", current_sb.max_file);
+    fprintf(stderr, "  zones:     %u\n", current_sb.zones);
+    fprintf(stderr, "  magic:     0x%x\n", current_sb.magic);
+    fprintf(stderr, "  blocksize:   %u\n", current_sb.blocksize);
+    fprintf(stderr, "  subversion:   %u\n", current_sb.subversion);
     fprintf(stderr, "==================================\n");
 }
 
 /**
- * Prints Inode data to stderr for -v flag.
- */
+* Prints Inode data to stderr for -v flag.
+*/
 void print_verbose_inode(uint32_t inode_num, const minix_inode_t *inode) {
     char perm_str[11];
     get_permissions_string(inode->mode, perm_str);
     
     fprintf(stderr, "\nFile inode #%u:\n", inode_num);
-    fprintf(stderr, "   mode:           0x%x (%s)\n", inode->mode, perm_str);
-    fprintf(stderr, "   links:          %u\n", inode->links);
-    fprintf(stderr, "   uid:            %u\n", inode->uid);
-    fprintf(stderr, "   gid:            %u\n", inode->gid);
-    fprintf(stderr, "   size:           %u\n", inode->size);
-    fprintf(stderr, "   atime:          %u --- %s", inode->atime, \
+    fprintf(stderr, "  mode:      0x%x (%s)\n", inode->mode, perm_str);
+    fprintf(stderr, "  links:     %u\n", inode->links);
+    fprintf(stderr, "  uid:      %u\n", inode->uid);
+    fprintf(stderr, "  gid:      %u\n", inode->gid);
+    fprintf(stderr, "  size:      %u\n", inode->size);
+    fprintf(stderr, "  atime:     %u --- %s", inode->atime, \
         ctime((time_t *)&inode->atime));
-    fprintf(stderr, "   mtime:          %u --- %s", inode->mtime, \
+    fprintf(stderr, "  mtime:     %u --- %s", inode->mtime, \
         ctime((time_t *)&inode->mtime));
-    fprintf(stderr, "   ctime:          %u --- %s", inode->ctime, \
+    fprintf(stderr, "  ctime:     %u --- %s", inode->ctime, \
         ctime((time_t *)&inode->ctime));
 
-    fprintf(stderr, "   Direct zones:\n");
+    fprintf(stderr, "  Direct zones:\n");
     for (int i = 0; i < DIRECT_ZONES; i++) {
-        fprintf(stderr, "     zone[%d] = %u\n", i, inode->zone[i]);
+        fprintf(stderr, "   zone[%d] = %u\n", i, inode->zone[i]);
     }
-    fprintf(stderr, "   indirect:       %u\n", inode->indirect);
-    fprintf(stderr, "   two_indirect:   %u\n", inode->two_indirect);
+    fprintf(stderr, "  indirect:    %u\n", inode->indirect);
+    fprintf(stderr, "  two_indirect:  %u\n", inode->two_indirect);
 }
