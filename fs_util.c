@@ -454,9 +454,8 @@ uint32_t get_inode_by_path(const char *canonical_path) {
         // AND the target inode is NOT a directory (mode & 0170000) != 0040000
         if (*next_token_start != '\0' && 
             (target_inode_data.mode & 0170000) != 0040000) {
-            
-            // This is the error message required by test 119 and 120
-            fprintf(stderr, "%s: trying to traverse a file: %s\n", \
+            // File is not a directory or doesn't exist
+            fprintf(stderr, "Not a directory: trying to traverse file: %s\n", \
                     canonical_path);
             return 0; // Traversal failed
         }
