@@ -46,8 +46,8 @@ void list_single_entry(uint32_t entry_inode_num, const char *name) {
     get_permissions_string(entry_inode.mode, perm_str);
 
     // Output format: [permissions] [size] [filename]
-    // The size field must be right-justified (e.g., using %8u or similar padding)
-    printf("%s %8u %s\n", perm_str, entry_inode.size, name);
+    // The size field must be right-justified to 9 bits, with a space on either side.
+    printf("%s %9u %s\n", perm_str, entry_inode.size, name);
 }
 
 /**
