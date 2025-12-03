@@ -1,7 +1,3 @@
-#define _GNU_SOURCE 
-// CRITICAL: Exposes POSIX functions like strtok_r and strnlen
-// when compiling with -std=c99. MUST be first line.
-
 #include "fs_util.h"
 
 // --- Global State Definitions (Shared across minls/minget via linking) ---
