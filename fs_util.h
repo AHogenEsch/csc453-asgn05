@@ -11,7 +11,7 @@
 #include <time.h>
 #include <libgen.h>
 
-// --- Constants ---
+// ~~~ Constants
 #define DIRECT_ZONES 7
 #define INODE_SIZE 64 // Size of an inode in bytes
 #define DIR_ENTRY_SIZE 64 // Size of a directory entry in bytes
@@ -21,9 +21,9 @@
 // Use this attribute to prevent compiler padding for on-disk structures
 #define PACKED __attribute__((__packed__))
 
-// --- Data Structures ---
+// ~~~ Data Structures
 
-// Partition Table Entry (Figure 2)
+// Partition Table Entry
 typedef struct PACKED {
     uint8_t bootind;
     uint8_t start_head;
@@ -37,7 +37,7 @@ typedef struct PACKED {
     uint32_t size;        // Size of partition (in sectors)
 } partition_entry_t;
 
-// MINIX Version 3 Superblock (Figure 3)
+// MINIX Version 3 Superblock
 typedef struct PACKED {
     uint32_t ninodes;
     uint16_t pad1;
@@ -54,7 +54,7 @@ typedef struct PACKED {
     uint8_t subversion;         // filesystem sub-version
 } minix_superblock_t;
 
-// MINIX Inode (Figure 4)
+// MINIX Inode
 typedef struct PACKED {
     uint16_t mode;                      // mode (file type and permissions)
     uint16_t links;                     // number or links
@@ -70,29 +70,29 @@ typedef struct PACKED {
     uint32_t unused;
 } minix_inode_t;
 
-// MINIX Directory Entry (Figure 5)
+// MINIX Directory Entry
 typedef struct PACKED {
     uint32_t inode;             // inode number (0 is deleted/invalid)
     unsigned char name[60];     // filename string
 } minix_dir_entry_t;
 
-// --- Global State Declarations (Externally accessible by minls/minget) ---
+// ~~~ Global State Declarations
 
 extern FILE *image_fp;
 extern long fs_offset;
-extern minix_superblock_t current_sb;
+extern minix_superblock_t curr_sb;
 extern uint32_t zone_size;
 extern int is_verbose;
 
-// --- Function Prototypes (Exposed API for minls/minget) ---
+// ~~~ Function Prototypes---
+
+// Low-Level I/O
+int read_fs_bytes(off_t offset_from_fs_start, void *buffer, size_t nbytes);
 
 // File System Initialization
 int init_filesystem(const char *image_file, int p_num, int s_num,\
      int verbose_flag);
 void cleanup_filesystem(void);
-
-// Low-Level I/O
-int read_fs_bytes(off_t offset_from_fs_start, void *buffer, size_t nbytes);
 
 // Inode and Block Access
 int read_inode(uint32_t inode_num, minix_inode_t *inode_out);

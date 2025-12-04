@@ -11,9 +11,6 @@
 void print_usage(const char *progname);
 int copy_file_data(const minix_inode_t *inode, FILE *dest_fp);
 
-// Global State from fs_util.c (needed for blocksize, zone_size, etc.)
-extern uint32_t zone_size;
-extern minix_superblock_t current_sb;
 
 /**
  * Prints the usage message for minget.
@@ -40,10 +37,10 @@ void print_usage(const char *progname) {
 int copy_file_data(const minix_inode_t *inode, FILE *dest_fp) {
     // The total file size determines how many bytes we need to copy
     uint32_t remaining_size = inode->size;
-    uint32_t current_logical_block = 0;
+    uint32_t curr_logical_block = 0;
     
     // Allocate a buffer the size of a block for efficient I/O
-    uint8_t *block_buf = (uint8_t *)malloc(current_sb.blocksize);
+    uint8_t *block_buf = (uint8_t *)malloc(curr_sb.blocksize);
     if (!block_buf) {
         perror("Error allocating buffer");
         return -1;
@@ -52,17 +49,17 @@ int copy_file_data(const minix_inode_t *inode, FILE *dest_fp) {
     if (is_verbose) {
         fprintf(stderr,
             "Starting copy. File size: %u bytes. Block size: %u.\n", 
-            remaining_size, current_sb.blocksize);
+            remaining_size, curr_sb.blocksize);
     }
     
     // Loop until all bytes are copied
     while (remaining_size > 0) {
-        // 1. Get the disk block number for the current logical block
+        // 1) Get the disk block number for the current logical block
         uint32_t disk_block_num = \
-        get_file_block(inode, current_logical_block);
+        get_file_block(inode, curr_logical_block);
 
         // Calculate how many bytes to read/write in this iteration
-        uint32_t bytes_to_copy = current_sb.blocksize;
+        uint32_t bytes_to_copy = curr_sb.blocksize;
         if (bytes_to_copy > remaining_size) {
             bytes_to_copy = remaining_size;
         }
@@ -72,7 +69,7 @@ int copy_file_data(const minix_inode_t *inode, FILE *dest_fp) {
             if (is_verbose) {
                 fprintf(stderr, 
                     "  [LBlock %u] Hole found. Writing %u zeros.\n",
-                    current_logical_block, bytes_to_copy);
+                    curr_logical_block, bytes_to_copy);
             }
             
             // Set the buffer to zeros for the hole's content
@@ -88,18 +85,18 @@ int copy_file_data(const minix_inode_t *inode, FILE *dest_fp) {
             // Normal data block: read from disk and write to destination.
             
             // Calculate the disk offset (relative to FS start)
-            off_t disk_offset = (off_t)disk_block_num * current_sb.blocksize;
+            off_t disk_offset = (off_t)disk_block_num * curr_sb.blocksize;
             
             if (is_verbose) {
                 fprintf(stderr, \
             "  [LBlock %u] Disk Block %u (Offset %ld). Copying %u bytes.\n",
-                    current_logical_block, disk_block_num,
+                    curr_logical_block, disk_block_num,
                     fs_offset + disk_offset, bytes_to_copy);
             }
             
             // Read the block from the disk image
             if (read_fs_bytes(disk_offset, block_buf, \
-                current_sb.blocksize) != 0) {
+                curr_sb.blocksize) != 0) {
                 fprintf(stderr, "Error reading data block %u from image.\n", \
                     disk_block_num);
                 free(block_buf);
@@ -117,7 +114,7 @@ int copy_file_data(const minix_inode_t *inode, FILE *dest_fp) {
 
         // Update loop variables
         remaining_size -= bytes_to_copy;
-        current_logical_block++;
+        curr_logical_block++;
     }
 
     free(block_buf);
@@ -125,7 +122,7 @@ int copy_file_data(const minix_inode_t *inode, FILE *dest_fp) {
 }
 
 /**
- * Main function for the minget utility.
+ * Main function for minget
  */
 int main(int argc, char *argv[]) {
     int p_num = -1, s_num = -1, verbose_flag = 0;
@@ -134,7 +131,7 @@ int main(int argc, char *argv[]) {
     char *dst_path = NULL;
     int opt;
 
-    // --- 1. Parse Arguments ---
+    // 1) Parse Arguments
     while ((opt = getopt(argc, argv, "p:s:vh")) != -1) {
         switch (opt) {
             case 'p':
@@ -171,13 +168,13 @@ int main(int argc, char *argv[]) {
         dst_path = argv[optind];
     }
 
-    // --- 2. Filesystem Initialization ---
+    // 2) Filesystem Initialization
     if (init_filesystem(image_file, p_num, s_num, verbose_flag) != 0) {
         cleanup_filesystem();
         return 1;
     }
 
-    // --- 3. Canonicalize Path and Find Inode ---
+    // 3) Canonicalize Path and Find Inode
     char *canonical_src_path = canonicalize_path(src_path);
     if (!canonical_src_path) {
         fprintf(stderr, "Error: Failed to canonicalize path: %s\n",src_path);
@@ -193,7 +190,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // --- 4. Read Inode and Check File Type ---
+    // 4) Read Inode and Check File Type
     minix_inode_t src_inode;
     if (read_inode(src_inode_num, &src_inode) != 0) {
         fprintf(stderr, "minget: Failed to read inode %u.\n", src_inode_num);
@@ -215,7 +212,7 @@ int main(int argc, char *argv[]) {
         print_verbose_inode(src_inode_num, &src_inode);
     }
     
-    // --- 5. Open Destination ---
+    // 5) Open Destination
     FILE *dest_fp = stdout; // Default to stdout
     int file_descriptor = -1;
 
@@ -238,10 +235,10 @@ int main(int argc, char *argv[]) {
         }
     }
     
-    // --- 6. Copy Data ---
+    // 6) Copy Data 
     int copy_status = copy_file_data(&src_inode, dest_fp);
 
-    // --- 7. Cleanup ---
+    // 7) Cleanup
     if (dst_path) {
         fclose(dest_fp);
     }

@@ -5,10 +5,6 @@
 #include <unistd.h>
 #include <getopt.h>
 
-// Global State from fs_util.c (needed for blocksize, zone_size, etc.)
-extern uint32_t zone_size;
-extern minix_superblock_t current_sb;
-extern int is_verbose;
 
 // Function prototypes
 void print_usage(const char *progname);
@@ -24,12 +20,12 @@ void print_usage(const char *progname) {
     "usage: %s [-v] [-p part [-s subpart]] imagefile [path]\n", progname);
     fprintf(stderr, "Options:\n");
     fprintf(stderr, \
-    " -p <num>   select primary partition for filesystem (default: none)\n");
+    " -p <num>  select primary partition for filesystem (default: none)\n");
     fprintf(stderr, \
-    " -s <num>   select subpartition for filesystem (default: none)\n");
-    fprintf(stderr, " -v         verbose. Print partition table(s), \
+    " -s <num>  select subpartition for filesystem (default: none)\n");
+    fprintf(stderr, " -v     verbose. Print partition table(s), \
     superblock, and source inode to stderr.\n");
-    fprintf(stderr, " -h         print usage information and exit\n");
+    fprintf(stderr, " -h     print usage information and exit\n");
 }
 
 /**
@@ -79,23 +75,23 @@ int list_directory_contents(uint32_t dir_inode_num, const char *dir_path) {
     }
 
     // Loop through all blocks of the directory file
-    for (i = 0; i * current_sb.blocksize < dir_inode.size; i++) {
+    for (i = 0; i * curr_sb.blocksize < dir_inode.size; i++) {
         uint32_t disk_block = get_file_block(&dir_inode, i);
         if (disk_block == 0) continue; // Skip file holes
 
-        off_t block_offset = (off_t)disk_block * current_sb.blocksize;
+        off_t block_offset = (off_t)disk_block * curr_sb.blocksize;
 
         // Read block content into a buffer for directory entries
-        uint8_t dir_block_buf[current_sb.blocksize];
+        uint8_t dir_block_buf[curr_sb.blocksize];
         if (read_fs_bytes(block_offset, dir_block_buf, \
-            current_sb.blocksize) != 0) {
+            curr_sb.blocksize) != 0) {
             fprintf(stderr, \
             "minls: Error reading directory data block %u.\n", disk_block);
             continue;
         }
 
         // Loop through directory entries in the block
-        uint32_t entries_per_block = current_sb.blocksize / DIR_ENTRY_SIZE;
+        uint32_t entries_per_block = curr_sb.blocksize / DIR_ENTRY_SIZE;
         for (j = 0; j < entries_per_block; j++) {
             // Cast the buffer section to the entry structure
             minix_dir_entry_t *entry = \
@@ -118,7 +114,7 @@ int list_directory_contents(uint32_t dir_inode_num, const char *dir_path) {
 }
 
 /**
- * Main function for the minls utility.
+ * Main function for minls.
  */
 int main(int argc, char *argv[]) {
     int p_num = -1, s_num = -1, verbose_flag = 0;
@@ -126,7 +122,7 @@ int main(int argc, char *argv[]) {
     char *src_path = "/"; // Default path to root directory
     int opt;
 
-    // --- 1. Parse Arguments ---
+    // ~~~ 1) Parse Arguments
     while ((opt = getopt(argc, argv, "p:s:vh")) != -1) {
         switch (opt) {
             case 'p':
@@ -161,13 +157,13 @@ int main(int argc, char *argv[]) {
         src_path = argv[optind];
     }
     
-    // --- 2. Filesystem Initialization ---
+    // ~~~ 2) Filesystem Initialization
     if (init_filesystem(image_file, p_num, s_num, verbose_flag) != 0) {
         cleanup_filesystem();
         return 1;
     }
 
-    // --- 3. Canonicalize Path and Find Inode ---
+    // ~~~ 3. Canonicalize Path and Find Inode
     char *canonical_src_path = canonicalize_path(src_path);
     if (!canonical_src_path) {
         fprintf(stderr, "Error: Failed to canonicalize path: %s\n", src_path);
@@ -183,7 +179,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // --- 4. Read Inode and Check File Type ---
+    // ~~~ 4. Read Inode and Check File Type
     minix_inode_t src_inode;
     if (read_inode(src_inode_num, &src_inode) != 0) {
         fprintf(stderr, "minls: Failed to read inode %u.\n", src_inode_num);
@@ -196,7 +192,7 @@ int main(int argc, char *argv[]) {
         print_verbose_inode(src_inode_num, &src_inode);
     }
     
-    // --- 5. List Contents or Single File ---
+    // ~~~ 5. List Contents or Single File
     int status = 0;
     
     // Check if it's a directory (0040000 mask)
@@ -208,10 +204,6 @@ int main(int argc, char *argv[]) {
         char *filename = canonical_src_path;
 
 // If the path is "/", list_single_entry should use "."
-// if the root were passed without a trailing slash, but 
-//here we cover the unlikely case
-// of root being treated as a file or to comply with the reference 
-//for root itself).
         if (strcmp(filename, "/") == 0) {
              filename = ".";
         } else if (filename[0] == '/') {
@@ -224,7 +216,7 @@ int main(int argc, char *argv[]) {
         list_single_entry(src_inode_num, filename);
     }
 
-    // --- 6. Cleanup ---
+    // ~~~ 6. Cleanup
     free(canonical_src_path);
     cleanup_filesystem();
 
