@@ -46,7 +46,7 @@ int copy_file_data(const minix_inode_t *inode, FILE *dest_fp) {
         return -1;
     }
 
-    if (is_verbose) {
+    if (verbose) {
         fprintf(stderr,
             "Starting copy. File size: %u bytes. Block size: %u.\n", 
             remaining_size, curr_sb.blocksize);
@@ -66,7 +66,7 @@ int copy_file_data(const minix_inode_t *inode, FILE *dest_fp) {
 
         if (disk_block_num == 0) {
             // Zone 0 indicates a file hole: skip reading, write zeros.
-            if (is_verbose) {
+            if (verbose) {
                 fprintf(stderr, 
                     "  [LBlock %u] Hole found. Writing %u zeros.\n",
                     curr_logical_block, bytes_to_copy);
@@ -87,7 +87,7 @@ int copy_file_data(const minix_inode_t *inode, FILE *dest_fp) {
             // Calculate the disk offset (relative to FS start)
             off_t disk_offset = (off_t)disk_block_num * curr_sb.blocksize;
             
-            if (is_verbose) {
+            if (verbose) {
                 fprintf(stderr, \
             "  [LBlock %u] Disk Block %u (Offset %ld). Copying %u bytes.\n",
                     curr_logical_block, disk_block_num,

@@ -82,7 +82,7 @@ extern FILE *image_fp;
 extern long fs_offset;
 extern minix_superblock_t curr_sb;
 extern uint32_t zone_size;
-extern int is_verbose;
+extern int verbose;
 
 // ~~~ Function Prototypes---
 
