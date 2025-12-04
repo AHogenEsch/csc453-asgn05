@@ -1,0 +1,9 @@
+August Hogen-Esch
+(ahogenes)
+
+fs_utils.c contains shared filesystem initialization, access, 
+and formatting functions used by minget and minls
+
+fs_utils.h acts as the single header used for all three source files
+
+Passes all 125 tests, should make cleanly via 'make'
