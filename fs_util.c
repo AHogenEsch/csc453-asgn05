@@ -5,9 +5,9 @@
 FILE *image_fp = NULL;
 // Byte offset from the start of the image to the filesystem
 long fs_offset = 0; 
-minix_superblk_t curr_sb;
+minix_superblock_t curr_sb;
 uint32_t zone_size = 0;
-uint32_t blks_per_zone = 0; // Calculated from log_zone_size
+uint32_t blocks_per_zone = 0; // Calculated from log_zone_size
 int verbose = 0; // Set by init_filesystem
 
 // ~~~ Reads and validates the Master Boot Record
@@ -103,7 +103,7 @@ int read_fs_bytes(off_t offset_from_fs_start, void *buffer, size_t nbytes) {
 // ~~~ 2. Filesystem Initialization
 
 /**
-* Initializes the global state (fs_offset, superblk).
+* Initializes the global state (fs_offset, superblock).
 * Returns 0 on success, -1 on failure.
 */
 int init_filesystem(const char *image_file, int p_num, int s_num, \
@@ -133,7 +133,7 @@ int init_filesystem(const char *image_file, int p_num, int s_num, \
         
         if (s_num != -1) {
 // Subpartition table starts relative to the containing partition's MBR block
-// MBR block is at fs_offset, and the table is at MBR_blk + 0x1BE
+// MBR block is at fs_offset, and the table is at MBR_block + 0x1BE
             off_t sub_pt_addr = fs_offset + PARTITION_TABLE_OFFSET;
             uint32_t s_start_sector_rel_disk = \
             get_partition_start(s_num, sub_pt_addr);
@@ -149,10 +149,10 @@ int init_filesystem(const char *image_file, int p_num, int s_num, \
         }
     }
     
-    // 2) Read Superblk (always at offset 1024 bytes from FS start)
-    if (read_fs_bytes(1024, &curr_sb, sizeof(minix_superblk_t)) != 0) {
+    // 2) Read Superblock (always at offset 1024 bytes from FS start)
+    if (read_fs_bytes(1024, &curr_sb, sizeof(minix_superblock_t)) != 0) {
         fprintf(stderr, \
-            "Error reading superblk (offset %ld).\n", fs_offset + 1024);
+            "Error reading superblock (offset %ld).\n", fs_offset + 1024);
         return -1;
     }
     
@@ -164,11 +164,11 @@ int init_filesystem(const char *image_file, int p_num, int s_num, \
     }
     
     // 4) Calculate disk geometry
-    blks_per_zone = 1 << curr_sb.log_zone_size;
-    zone_size = (uint32_t)curr_sb.blksize * blks_per_zone;
+    blocks_per_zone = 1 << curr_sb.log_zone_size;
+    zone_size = (uint32_t)curr_sb.blocksize * blocks_per_zone;
     
     if (verbose) {
-        print_verbose_superblk(image_file, p_num, s_num);
+        print_verbose_superblock(image_file, p_num, s_num);
     }
     
     return 0;
@@ -185,7 +185,7 @@ void cleanup_filesystem(void) {
 }
 
 
-// ~~~ 3. Inode and blk Access
+// ~~~ 3. Inode and block Access
 
 /**
 * Reads an inode into the provided structure.
@@ -196,15 +196,15 @@ int read_inode(uint32_t inode_num, minix_inode_t *inode_out) {
         return -1;
     }
 
-    // Inodes start at blk 2 + B_imap + B_zmap
-    uint32_t inode_start_blk = 2 + \
-    curr_sb.i_blks + curr_sb.z_blks;
+    // Inodes start at block 2 + B_imap + B_zmap
+    uint32_t inode_start_block = 2 + \
+    curr_sb.i_blocks + curr_sb.z_blocks;
     
     // Inodes are numbered 1-based, array i is 0-based
     uint32_t i = inode_num - 1;
 
-    // Offset calculation: (blk * blksize) + (i * Inode_Size)
-    off_t offset = (off_t)inode_start_blk * curr_sb.blksize;
+    // Offset calculation: (block * blocksize) + (i * Inode_Size)
+    off_t offset = (off_t)inode_start_block * curr_sb.blocksize;
     offset += (off_t)i * INODE_SIZE;
 
     return read_fs_bytes(offset, inode_out, sizeof(minix_inode_t));
@@ -216,30 +216,30 @@ int read_inode(uint32_t inode_num, minix_inode_t *inode_out) {
 * Returns the absolute block number on disk (0 for holes/invalid).
 * NOTE: For MINIX v3, zones are typically 1 block (log_zone_size=0).
 */
-uint32_t get_file_blk(const minix_inode_t *inode, uint32_t logical_blk) {
+uint32_t get_file_block(const minix_inode_t *inode, uint32_t logical_block) {
     uint32_t zone_num = 0;
-    uint32_t blks_per_zone_val = 1 << curr_sb.log_zone_size;
-    uint32_t ptrs_per_blk = curr_sb.blksize / sizeof(uint32_t);
+    uint32_t blocks_per_zone_val = 1 << curr_sb.log_zone_size;
+    uint32_t ptrs_per_block = curr_sb.blocksize / sizeof(uint32_t);
     
-    uint32_t logical_zone = logical_blk / blks_per_zone_val;
-    uint32_t blk_in_zone = logical_blk % blks_per_zone_val;
+    uint32_t logical_zone = logical_block / blocks_per_zone_val;
+    uint32_t block_in_zone = logical_block % blocks_per_zone_val;
 
     // Direct Zones (0 to DIRECT_ZONES-1)
     if (logical_zone < DIRECT_ZONES) { 
         zone_num = inode->zone[logical_zone];
     }
     // Single indirect Zone
-    else if (logical_zone < DIRECT_ZONES + ptrs_per_blk) {
+    else if (logical_zone < DIRECT_ZONES + ptrs_per_block) {
         uint32_t indir_zone_i = logical_zone - DIRECT_ZONES;
         
         // Check if the indir zone itself exists
         if (inode->indirect != 0) {
-            uint32_t indir_ptrs[ptrs_per_blk];
-            off_t indir_blk_offset = (off_t)inode->indirect * zone_size;
+            uint32_t indir_ptrs[ptrs_per_block];
+            off_t indir_block_offset = (off_t)inode->indirect * zone_size;
 
-            // Read the blk containing the list of zone ptrs
-            if (read_fs_bytes(indir_blk_offset, \
-                indir_ptrs, curr_sb.blksize) == 0) {
+            // Read the block containing the list of zone ptrs
+            if (read_fs_bytes(indir_block_offset, \
+                indir_ptrs, curr_sb.blocksize) == 0) {
                 // Get the actual data zone number from the list
                 zone_num = indir_ptrs[indir_zone_i];
             }
@@ -248,20 +248,20 @@ uint32_t get_file_blk(const minix_inode_t *inode, uint32_t logical_blk) {
     // Double indir Zone
     else {
         // Calculate the logical zone i relative to the double indir
-        uint32_t ptrs_in_single = ptrs_per_blk;
+        uint32_t ptrs_in_single = ptrs_per_block;
         uint32_t double_indir_start = DIRECT_ZONES + ptrs_in_single;
         uint32_t offset_in_double = logical_zone - double_indir_start;
         zone_num = 0; // Default to file hole
 
-        // Check if the double indir blk itself exists
+        // Check if the double indir block itself exists
         if (inode->two_indirect != 0) {
             uint32_t first_level_ptrs[ptrs_in_single];
             off_t double_indir_offset = \
                 (off_t)inode->two_indirect * zone_size;
 
-            // Read the first level (ptrs to single indir blks)
+            // Read the first level (ptrs to single indir blocks)
             if (read_fs_bytes(double_indir_offset, \
-                first_level_ptrs, curr_sb.blksize) == 0) {
+                first_level_ptrs, curr_sb.blocksize) == 0) {
                 
                 uint32_t first_level_i = \
                     offset_in_double / ptrs_in_single;
@@ -278,7 +278,7 @@ uint32_t get_file_blk(const minix_inode_t *inode, uint32_t logical_blk) {
                         
                         // Read the second level (ptrs to data zones)
                         if (read_fs_bytes(second_indir_offset, \
-          second_level_ptrs, curr_sb.blksize) == 0) {
+          second_level_ptrs, curr_sb.blocksize) == 0) {
 
                             uint32_t second_level_i = \
                                 offset_in_double % ptrs_in_single;
@@ -295,11 +295,11 @@ uint32_t get_file_blk(const minix_inode_t *inode, uint32_t logical_blk) {
     // Check for file hole (zone 0)
     if (zone_num == 0) return 0; 
     
-    // blk number = Zone number * blks_per_zone_val + blk_in_zone
-    uint32_t disk_blk_num = (zone_num * blks_per_zone_val) + blk_in_zone;
+    // block number = Zone number * blocks_per_zone_val + block_in_zone
+    uint32_t disk_block_num = (zone_num * blocks_per_zone_val) + block_in_zone;
 
-    // This blk number is now ready to be multiplied by curr_sb.blksize
-    return disk_blk_num;
+    // This block number is now ready to be multiplied by curr_sb.blocksize
+    return disk_block_num;
 }
 
 
@@ -400,20 +400,20 @@ uint32_t get_inode_by_path(const char *canonical_path) {
         uint32_t target_inode = 0;
         size_t token_len = strlen(token);
         
-        // Loop through all blks of the directory file
-        for (i= 0; i * curr_sb.blksize < dir_inode.size; i++) {
-            uint32_t disk_blk = get_file_blk(&dir_inode, i);
-            if (disk_blk == 0) continue; 
+        // Loop through all blocks of the directory file
+        for (i= 0; i * curr_sb.blocksize < dir_inode.size; i++) {
+            uint32_t disk_block = get_file_block(&dir_inode, i);
+            if (disk_block == 0) continue; 
             
-            off_t blk_offset = (off_t)disk_blk * curr_sb.blksize;
+            off_t block_offset = (off_t)disk_block * curr_sb.blocksize;
             
-            uint8_t dir_blk_buf[curr_sb.blksize];
-            if (read_fs_bytes(blk_offset, 
-                dir_blk_buf, curr_sb.blksize) != 0) continue;
+            uint8_t dir_block_buf[curr_sb.blocksize];
+            if (read_fs_bytes(block_offset, 
+                dir_block_buf, curr_sb.blocksize) != 0) continue;
             
-            for (j = 0; j*DIR_ENTRY_SIZE < curr_sb.blksize;j++){
+            for (j = 0; j*DIR_ENTRY_SIZE < curr_sb.blocksize;j++){
                 minix_dir_entry_t *entry = 
-                (minix_dir_entry_t *)(dir_blk_buf + j * DIR_ENTRY_SIZE);
+                (minix_dir_entry_t *)(dir_block_buf + j * DIR_ENTRY_SIZE);
                 
                 if (entry->inode == 0) continue; 
                 
@@ -502,24 +502,24 @@ void get_permissions_string(uint16_t mode, char *perm_str) {
 /**
 * Prints Superblock and Partition info to stderr for -v flag.
 */
-void print_verbose_superblk(const char *image_file, int p_num, int s_num) {
+void print_verbose_superblock(const char *image_file, int p_num, int s_num) {
     fprintf(stderr, "\n=== VERBOSE MODE (fs_util.c) ===\n");
     fprintf(stderr, "Image File: %s\n", image_file);
     fprintf(stderr, "Partition: %d, Subpartition: %d\n", p_num, s_num);
     fprintf(stderr, "FS Start (Disk Offset): %ld bytes (Sector: %ld)\n", \
         fs_offset, fs_offset / SECTOR_SIZE);
     
-    fprintf(stderr, "\nSuperblk Contents:\n");
+    fprintf(stderr, "\nSuperblock Contents:\n");
     fprintf(stderr, "  ninodes:    %u\n", curr_sb.ninodes);
-    fprintf(stderr, "  i_blks:    %d\n", curr_sb.i_blks);
-    fprintf(stderr, "  z_blks:    %d\n", curr_sb.z_blks);
+    fprintf(stderr, "  i_blocks:    %d\n", curr_sb.i_blocks);
+    fprintf(stderr, "  z_blocks:    %d\n", curr_sb.z_blocks);
     fprintf(stderr, "  firstdata:   %u\n", curr_sb.firstdata);
     fprintf(stderr, "  log_zone_size: %d (zone size: %u)\n", \
         curr_sb.log_zone_size, zone_size);
     fprintf(stderr, "  max_file:    %u\n", curr_sb.max_file);
     fprintf(stderr, "  zones:     %u\n", curr_sb.zones);
     fprintf(stderr, "  magic:     0x%x\n", curr_sb.magic);
-    fprintf(stderr, "  blksize:   %u\n", curr_sb.blksize);
+    fprintf(stderr, "  blocksize:   %u\n", curr_sb.blocksize);
     fprintf(stderr, "  subversion:   %u\n", curr_sb.subversion);
     fprintf(stderr, "==================================\n");
 }
